@@ -1,12 +1,12 @@
-# deviceQuery - Device Query
+# GeauldenTigerTM - A software transactional memory test for CUDA
 
 ## Description
 
-This sample enumerates the properties of the CUDA devices present in the system.
+A software transactional memory test for CUDA.
 
 ## Key Concepts
 
-CUDA Runtime API, Device Query
+CUDA, Transactional Memory
 
 ## Supported SM Architectures
 
@@ -14,20 +14,18 @@ CUDA Runtime API, Device Query
 
 ## Supported OSes
 
-Linux, Windows, MacOSX
+Linux, Windows
 
 ## Supported CPU Architecture
 
-x86_64, ppc64le, armv7l, aarch64
+x86_64
 
-## CUDA APIs involved
-
-### [CUDA Runtime API](http://docs.nvidia.com/cuda/cuda-runtime-api/index.html)
-cudaSetDevice, cudaGetDeviceCount, cudaGetDeviceProperties, cudaDriverGetVersion, cudaRuntimeGetVersion
 
 ## Prerequisites
 
 Download and install the [CUDA Toolkit 10.2](https://developer.nvidia.com/cuda-downloads) for your corresponding platform.
+
+Download and install CUDA Samples.
 
 ## Build and Run
 

@@ -8,6 +8,7 @@
 
 #include "device_launch_parameters.h"
 
+// "USE_PSTM" is defined in project settings
 #define USE_PSTM
 
 #ifdef USE_PSTM
@@ -30,11 +31,6 @@
 	} \
 }
 
-__global__ void hello(int* x) {
-  printf("Hello from thd (%d,%d), g_se=%p\n", blockIdx.x, threadIdx.x, g_se);
-  *x = 10;
-}
-
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
 }
@@ -48,7 +44,6 @@ __global__ void counterTest(class RWLogs* rwlogs, int* scratch) {
   __threadfence();
   int attempt = 0;
   const int ATTEMPT_LIMIT = 1000000;
-  printf("Thd %d start\n", tid);
 retry:
   p_rwlog->releaseAll(tid);
   p_rwlog->init();
@@ -63,8 +58,31 @@ retry:
   TX_COMMIT;
   if (aborted) goto retry;
   else SET_TXN_STATE(ABORTED);
+}
 
-  printf("Tx %d counter %d->%d\n", tid, c, c + 1);
+__global__ void counterTestLong(class RWLogs* rwlogs, long* scratch) {
+  __syncthreads();
+  const int tid = GetThdID();
+  RWLogs* p_rwlog = &(rwlogs[tid]);
+  SET_TXN_STATE(RUNNING);
+  p_rwlog->init();
+  __threadfence();
+  int attempt = 0;
+  const int ATTEMPT_LIMIT = 1000000;
+retry:
+  p_rwlog->releaseAll(tid);
+  p_rwlog->init();
+  if (attempt++ >= ATTEMPT_LIMIT) { return; }
+
+  INCREMENT_ABORT_COUNT;
+  SET_TXN_STATE(RUNNING);
+  bool aborted = false;
+  int c;
+  TX_READLONG(scratch, &c);
+  TX_WRITELONG(scratch, c + 1);
+  TX_COMMIT;
+  if (aborted) goto retry;
+  else SET_TXN_STATE(ABORTED);
 }
 
 
@@ -114,12 +132,35 @@ int main(int argc, char **argv) {
 
   #endif
 
-  int* d_scratch;
-  CE(cudaMalloc(&d_scratch, sizeof(int)));
-  CE(cudaMemset(d_scratch, 0x00, sizeof(int)));
-  counterTest<<<NB, NT>>>(d_rwlogs, d_scratch);
+  int run_mode = 0;
+  for (int i=1; i<argc; i++) {
+    int x;
+    if (1 == sscanf(argv[1], "exp=%d", &x)) {
+      printf("Run mode set to %d\n", x);
+      run_mode = x;
+    }
+  }
 
-
+  switch (run_mode) {
+    case 0: {
+      int* d_scratch, h_scratch;
+      CE(cudaMalloc(&d_scratch, sizeof(int)));
+      CE(cudaMemset(d_scratch, 0x00, sizeof(int)));
+      counterTest<<<NB, NT>>>(d_rwlogs, d_scratch);
+      CE(cudaMemcpy(&h_scratch, d_scratch, sizeof(int), cudaMemcpyDeviceToHost));
+      printf("(int) Counter=%d\n", h_scratch);
+      break;
+    }
+    case 1: {
+      long* d_scratch, h_scratch;
+      CE(cudaMalloc(&d_scratch, sizeof(long)));
+      CE(cudaMemset(d_scratch, 0x00, sizeof(long)));
+      counterTestLong<<<NB, NT>>>(d_rwlogs, d_scratch);
+      CE(cudaMemcpy(&h_scratch, d_scratch, sizeof(long), cudaMemcpyDeviceToHost));
+      printf("(long) Counter=%ld\n", h_scratch);
+      break;
+    }
+  }
 
   // Print statistics
   int h_n_commits, h_n_aborts;
