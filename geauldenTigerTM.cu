@@ -31,6 +31,8 @@
 	} \
 }
 
+extern __global__ void Hello(); // This is okay; extern __device__ is not okay
+
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
 }
@@ -85,6 +87,32 @@ retry:
   else SET_TXN_STATE(ABORTED);
 }
 
+__global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N) {
+  const int tid = GetThdID();
+  RWLogs* p_rwlog = &(rwlogs[tid]);
+  SET_TXN_STATE(RUNNING);
+  p_rwlog->init();
+  __threadfence();
+  int attempt = 0;
+  const int ATTEMPT_LIMIT = 1000000;
+retry:
+  p_rwlog->releaseAll(tid);
+  p_rwlog->init();
+  if (attempt++ >= ATTEMPT_LIMIT) { return; }
+  bool aborted = false;
+
+  INCREMENT_ABORT_COUNT;
+  SET_TXN_STATE(RUNNING);
+  for (int n=0; n<N; n++) {
+    const int idx = (n + tid) % N;
+    int c;
+    TX_READ(&(scratch[idx]), &c);
+    TX_WRITE(&(scratch[idx]), c+1);
+  }
+  TX_COMMIT;
+  if (aborted) goto retry;
+  else SET_TXN_STATE(ABORTED);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
@@ -132,7 +160,7 @@ int main(int argc, char **argv) {
 
   #endif
 
-  int run_mode = 0;
+  int run_mode = 2;
   for (int i=1; i<argc; i++) {
     int x;
     if (1 == sscanf(argv[1], "exp=%d", &x)) {
@@ -140,6 +168,10 @@ int main(int argc, char **argv) {
       run_mode = x;
     }
   }
+
+  //Hello<<<1, 1>>>();
+
+  const int NUM_COUNTERS = 10;
 
   switch (run_mode) {
     case 0: {
@@ -158,6 +190,19 @@ int main(int argc, char **argv) {
       counterTestLong<<<NB, NT>>>(d_rwlogs, d_scratch);
       CE(cudaMemcpy(&h_scratch, d_scratch, sizeof(long), cudaMemcpyDeviceToHost));
       printf("(long) Counter=%ld\n", h_scratch);
+      break;
+    }
+    case 2: {
+      int* d_scratch, h_scratch[NUM_COUNTERS];
+      CE(cudaMalloc(&d_scratch, sizeof(int)*NUM_COUNTERS));
+      CE(cudaMemset(d_scratch, 0x00, sizeof(int)*NUM_COUNTERS));
+      counterTestMultiple<<<NB, NT>>>(d_rwlogs, d_scratch, NUM_COUNTERS);
+      CE(cudaMemcpy(h_scratch, d_scratch, sizeof(int)*NUM_COUNTERS, cudaMemcpyDeviceToHost));
+      printf("(multiple int's)");
+      for (int i=0; i<NUM_COUNTERS; i++) {
+        printf(" %d", h_scratch[i]);
+      }
+      printf("\n");
       break;
     }
   }
