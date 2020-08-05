@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
+#include <cuda.h>
 
 #include <iostream>
 #include <memory>
@@ -12,7 +13,7 @@
 #define USE_PSTM
 
 #ifdef USE_PSTM
-  #include "pstm.cu" // This file should be set to "not involved in the compilation process"
+  #include "pstm.h"
   #define SET_TXN_STATE(s) { atomicExch((int*)(&g_txnstate[tid]), (int)s); }
   #define INCREMENT_ABORT_COUNT { if (g_txnstate[tid] == ABORTED) { atomicAdd(g_n_aborts, 1); } }
   #define TX_READ(addr, ptr)      { if (!TxRead(tid, &aborted, (int*)(addr), (int*)(ptr), p_rwlog))       goto retry; }
@@ -20,6 +21,11 @@
   #define TX_WRITE(addr, val)     { if (!TxWrite(tid, &aborted, (int*)(addr), (int)(val), p_rwlog))       goto retry; }
   #define TX_WRITELONG(addr, val) { if (!TxWriteLong(tid, &aborted, (long*)(addr), (long)(val), p_rwlog)) goto retry; }
   #define TX_COMMIT { TxCommit(tid, &aborted, p_rwlog); }
+  // Book-keeping stuff for PSTM
+  extern __device__           int* g_se; // SE means Shadow Entry
+  extern __device__ enum TxnState* g_txnstate;
+  extern __device__           int* g_locks;
+  extern __device__ int g_num_blk, g_num_thd_per_blk;
 #endif
 
 #define CE(call) {\
@@ -31,88 +37,18 @@
 	} \
 }
 
+__device__ int* g_n_commits, * g_n_aborts;
+
+// Workloads
 extern __global__ void Hello(); // This is okay; extern __device__ is not okay
+extern __global__ void counterTest(class RWLogs*, int*);
+extern __global__ void counterTestLong(class RWLogs* rwlogs, long* scratch);
 
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
 }
 
-__global__ void counterTest(class RWLogs* rwlogs, int* scratch) {
-  __syncthreads();
-  const int tid = GetThdID();
-  RWLogs* p_rwlog = &(rwlogs[tid]);
-  SET_TXN_STATE(RUNNING);
-  p_rwlog->init();
-  __threadfence();
-  int attempt = 0;
-  const int ATTEMPT_LIMIT = 1000000;
-retry:
-  p_rwlog->releaseAll(tid);
-  p_rwlog->init();
-  if (attempt++ >= ATTEMPT_LIMIT) { return; }
-  
-  INCREMENT_ABORT_COUNT;
-  SET_TXN_STATE(RUNNING);
-  bool aborted = false;
-  int c;
-  TX_READ(scratch, &c);
-  TX_WRITE(scratch, c + 1);
-  TX_COMMIT;
-  if (aborted) goto retry;
-  else SET_TXN_STATE(ABORTED);
-}
-
-__global__ void counterTestLong(class RWLogs* rwlogs, long* scratch) {
-  __syncthreads();
-  const int tid = GetThdID();
-  RWLogs* p_rwlog = &(rwlogs[tid]);
-  SET_TXN_STATE(RUNNING);
-  p_rwlog->init();
-  __threadfence();
-  int attempt = 0;
-  const int ATTEMPT_LIMIT = 1000000;
-retry:
-  p_rwlog->releaseAll(tid);
-  p_rwlog->init();
-  if (attempt++ >= ATTEMPT_LIMIT) { return; }
-
-  INCREMENT_ABORT_COUNT;
-  SET_TXN_STATE(RUNNING);
-  bool aborted = false;
-  int c;
-  TX_READLONG(scratch, &c);
-  TX_WRITELONG(scratch, c + 1);
-  TX_COMMIT;
-  if (aborted) goto retry;
-  else SET_TXN_STATE(ABORTED);
-}
-
-__global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N) {
-  const int tid = GetThdID();
-  RWLogs* p_rwlog = &(rwlogs[tid]);
-  SET_TXN_STATE(RUNNING);
-  p_rwlog->init();
-  __threadfence();
-  int attempt = 0;
-  const int ATTEMPT_LIMIT = 1000000;
-retry:
-  p_rwlog->releaseAll(tid);
-  p_rwlog->init();
-  if (attempt++ >= ATTEMPT_LIMIT) { return; }
-  bool aborted = false;
-
-  INCREMENT_ABORT_COUNT;
-  SET_TXN_STATE(RUNNING);
-  for (int n=0; n<N; n++) {
-    const int idx = (n + tid) % N;
-    int c;
-    TX_READ(&(scratch[idx]), &c);
-    TX_WRITE(&(scratch[idx]), c+1);
-  }
-  TX_COMMIT;
-  if (aborted) goto retry;
-  else SET_TXN_STATE(ABORTED);
-}
+__global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
@@ -169,7 +105,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  //Hello<<<1, 1>>>();
+  Hello<<<1, 1>>>();
 
   const int NUM_COUNTERS = 10;
 

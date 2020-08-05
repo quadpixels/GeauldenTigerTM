@@ -66,7 +66,7 @@
       <CodeGeneration>compute_60,sm_60;compute_50,sm_50</CodeGeneration>
       <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
       <Include>./;../../Common</Include>
-      <Defines>WIN32</Defines>
+      <Defines>WIN32;__CUDACC__</Defines>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -81,7 +81,7 @@
     <CudaCompile>
       <Runtime>MTd</Runtime>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -96,17 +96,19 @@
     <CudaCompile>
       <Runtime>MT</Runtime>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="counter_test.cu" />
+    <CudaCompile Include="counter_test.cu">
+      <Defines Condition="'$(Configuration)|$(Platform)'=='Release|x64'">WIN32</Defines>
+    </CudaCompile>
     <CudaCompile Include="geauldenTigerTM.cu">
       <FileType>Document</FileType>
     </CudaCompile>
-    <None Include="pstm.cu">
+    <CudaCompile Include="pstm.cu">
       <FileType>Document</FileType>
-    </None>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
