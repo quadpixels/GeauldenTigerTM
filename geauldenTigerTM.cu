@@ -9,6 +9,8 @@
 
 #include "device_launch_parameters.h"
 
+// Caution: sizeof(long) may be 4
+
 // "USE_PSTM" is defined in project settings
 #define USE_PSTM
 
@@ -42,13 +44,13 @@ __device__ int* g_n_commits, * g_n_aborts;
 // Workloads
 extern __global__ void Hello(); // This is okay; extern __device__ is not okay
 extern __global__ void counterTest(class RWLogs*, int*);
-extern __global__ void counterTestLong(class RWLogs* rwlogs, long* scratch);
+extern __global__ void counterTestLong(class RWLogs* rwlogs, int64_t* scratch);
+extern __global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N);
+extern __global__ void counterTestMultipleLong(class RWLogs* rwlogs, int64_t* scratch, const int N);
 
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
 }
-
-__global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
@@ -99,9 +101,11 @@ int main(int argc, char **argv) {
   int run_mode = 2;
   for (int i=1; i<argc; i++) {
     int x;
-    if (1 == sscanf(argv[1], "exp=%d", &x)) {
+    if (1 == sscanf(argv[i], "exp=%d", &x)) {
       printf("Run mode set to %d\n", x);
       run_mode = x;
+    } else if (2 == sscanf(argv[i], "dim=%d,%d", &NB, &NT)) {
+      printf("Dimension set to <<<%d, %d>>>\n", NB, NT);
     }
   }
 
@@ -119,12 +123,12 @@ int main(int argc, char **argv) {
       printf("(int) Counter=%d\n", h_scratch);
       break;
     }
-    case 1: {
-      long* d_scratch, h_scratch;
-      CE(cudaMalloc(&d_scratch, sizeof(long)));
-      CE(cudaMemset(d_scratch, 0x00, sizeof(long)));
+    case 10: {
+      int64_t* d_scratch, h_scratch;
+      CE(cudaMalloc(&d_scratch, sizeof(int64_t)));
+      CE(cudaMemset(d_scratch, 0x00, sizeof(int64_t)));
       counterTestLong<<<NB, NT>>>(d_rwlogs, d_scratch);
-      CE(cudaMemcpy(&h_scratch, d_scratch, sizeof(long), cudaMemcpyDeviceToHost));
+      CE(cudaMemcpy(&h_scratch, d_scratch, sizeof(int64_t), cudaMemcpyDeviceToHost));
       printf("(long) Counter=%ld\n", h_scratch);
       break;
     }
@@ -137,6 +141,19 @@ int main(int argc, char **argv) {
       printf("(multiple int's)");
       for (int i=0; i<NUM_COUNTERS; i++) {
         printf(" %d", h_scratch[i]);
+      }
+      printf("\n");
+      break;
+    }
+    case 20: {
+      int64_t* d_scratch, h_scratch[NUM_COUNTERS];
+      CE(cudaMalloc(&d_scratch, sizeof(int64_t)*NUM_COUNTERS));
+      CE(cudaMemset(d_scratch, 0x00, sizeof(int64_t)*NUM_COUNTERS));
+      counterTestMultipleLong<<<NB, NT>>>(d_rwlogs, d_scratch, NUM_COUNTERS);
+      CE(cudaMemcpy(h_scratch, d_scratch, sizeof(int64_t)*NUM_COUNTERS, cudaMemcpyDeviceToHost));
+      printf("(multiple long's)");
+      for (int i=0; i<NUM_COUNTERS; i++) {
+        printf(" %ld", h_scratch[i]);
       }
       printf("\n");
       break;

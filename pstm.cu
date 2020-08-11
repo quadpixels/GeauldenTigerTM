@@ -71,6 +71,10 @@ __device__ void RWLogs::appendShadowEntry(const int my_tid, int* p_shadow_entry)
 	owned[nowned++] = offset;
 }
 
+__device__ void RWLogs::Dump() {
+	printf("owned=%d\n", nowned);
+}
+
 __device__ bool TxAcquire(const int tid, int* p_se/* ptr to shadow entry */) {
 	bool aborted = false;
 	int shadow = *p_se;
@@ -103,7 +107,7 @@ __device__ bool TxAcquire(const int tid, int* p_se/* ptr to shadow entry */) {
 __device__ bool TxRead(const int tid, bool* aborted,
 	const int* const addr, int* const value, class RWLogs* rwlog) {
 	if (*aborted == true) return false;
-	long lock_idx = ((int64_t)addr / 16L) % SIZE;
+	int64_t lock_idx = ((int64_t)addr / 16L) % SIZE;
 	(*aborted) |= TxAcquire(tid, &g_se[lock_idx]);
 	if (*aborted == false) {
 		rwlog->appendShadowEntry(tid, &g_se[lock_idx]);
@@ -116,7 +120,7 @@ __device__ bool TxRead(const int tid, bool* aborted,
 __device__ bool TxWrite(const int tid, bool* aborted,
 	int* const addr, const int value, class RWLogs* rwlog) {
 	if (*aborted == true) return !(*aborted);
-	long lock_idx = ((int64_t)addr / 16) % SIZE;
+	int64_t lock_idx = ((int64_t)addr / 16) % SIZE;
 	(*aborted) |= TxAcquire(tid, &g_se[lock_idx]);
 	if (*aborted == false) {
 		rwlog->appendShadowEntry(tid, &g_se[lock_idx]);
@@ -126,18 +130,18 @@ __device__ bool TxWrite(const int tid, bool* aborted,
 }
 
 __device__ bool TxReadLong(const int tid, bool* aborted,
-	const long* const addr, long* const value, RWLogs* rwlog) {
+	const int64_t* const addr, int64_t* const value, RWLogs* rwlog) {
 	int lower, upper;
 	int* addr_lower = (int*)addr, * addr_upper = addr_lower + 1;
 	if (!TxRead(tid, aborted, addr_lower, &lower, rwlog)) return !(*aborted);
 	if (!TxRead(tid, aborted, addr_upper, &upper, rwlog)) return !(*aborted);
-	long ret = ((int64_t)(upper) << 32) | lower;
+	int64_t ret = ((int64_t)(upper) << 32) | lower;
 	*value = ret;
 	return !(*aborted);
 }
 
 __device__ bool TxWriteLong(const int tid, bool* aborted,
-	long* const addr, const long value, RWLogs* rwlog) {
+	int64_t* const addr, const int64_t value, RWLogs* rwlog) {
 	int lower = (value & 0xFFFFFFFF), upper = ((int64_t)value >> 32) & 0xFFFFFFFF;
 	int* addr_lower = (int*)addr, * addr_upper = addr_lower + 1;
 	if (!TxWrite(tid, aborted, addr_lower, lower, rwlog)) return false;

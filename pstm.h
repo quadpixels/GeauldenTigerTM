@@ -34,13 +34,14 @@ public:
 	__device__ void appendWrite(int* const addr, int val);
 	__device__ void commitToMemory();
 	__device__ bool findValueInWriteLog(const int* addr, int* val);
+	__device__ void Dump();
 };
 
 // Prototypes
 extern __device__ bool TxRead(const int tid, bool* aborted,	const int* const addr, int* const value, class RWLogs* rwlog);
-extern __device__ bool TxReadLong(const int tid, bool* aborted,	const long* const addr, long* const value, RWLogs* rwlog);
+extern __device__ bool TxReadLong(const int tid, bool* aborted,	const int64_t* const addr, int64_t* const value, RWLogs* rwlog);
 extern __device__ bool TxWrite(const int tid, bool* aborted,	int* const addr, const int value, class RWLogs* rwlog);
-extern __device__ bool TxWriteLong(const int tid, bool* aborted,long* const addr, const long value, RWLogs* rwlog);
+extern __device__ bool TxWriteLong(const int tid, bool* aborted, int64_t* const addr, const int64_t value, RWLogs* rwlog);
 extern __device__ bool TxCommit(const int tid, bool* aborted, class RWLogs* rwlog);
 
 #endif
