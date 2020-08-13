@@ -59,6 +59,17 @@ int main(int argc, char **argv) {
 
   int NB = 4, NT = 32;
 
+  int run_mode = 2;
+  for (int i=1; i<argc; i++) {
+    int x;
+    if (1 == sscanf(argv[i], "exp=%d", &x)) {
+      printf("Run mode set to %d\n", x);
+      run_mode = x;
+    } else if (2 == sscanf(argv[i], "dim=%d,%d", &NB, &NT)) {
+      printf("Dimension set to <<<%d, %d>>>\n", NB, NT);
+    }
+  }
+
   // Metadata for Orec-based STM algorithms
   #if defined(USE_PSTM)
   int* d_se, * d_locks;
@@ -97,17 +108,6 @@ int main(int argc, char **argv) {
   CE(cudaMemcpyToSymbol(g_n_aborts, &d_n_aborts, sizeof(int*), 0, cudaMemcpyHostToDevice));
 
   #endif
-
-  int run_mode = 2;
-  for (int i=1; i<argc; i++) {
-    int x;
-    if (1 == sscanf(argv[i], "exp=%d", &x)) {
-      printf("Run mode set to %d\n", x);
-      run_mode = x;
-    } else if (2 == sscanf(argv[i], "dim=%d,%d", &NB, &NT)) {
-      printf("Dimension set to <<<%d, %d>>>\n", NB, NT);
-    }
-  }
 
   Hello<<<1, 1>>>();
 
