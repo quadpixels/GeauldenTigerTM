@@ -8,6 +8,7 @@
 #include <assert.h>
 
 #include "device_launch_parameters.h"
+#include "linkedlist.h"
 
 // Caution: sizeof(long) may be 4
 
@@ -48,6 +49,8 @@ extern __global__ void counterTestLong(class RWLogs* rwlogs, int64_t* scratch);
 extern __global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N);
 extern __global__ void counterTestMultipleLong(class RWLogs* rwlogs, int64_t* scratch, const int N);
 
+extern __global__ void listbmk_GPU_serial(ListNode* list_head, ListNode* new_nodes, int count);
+
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
 }
@@ -58,6 +61,8 @@ __device__ int GetThdID() {
 int main(int argc, char **argv) {
 
   int NB = 4, NT = 32;
+  // Parameters for various tests
+  int LIST_SIZE = 100;
 
   int run_mode = 2;
   for (int i=1; i<argc; i++) {
@@ -114,7 +119,7 @@ int main(int argc, char **argv) {
   const int NUM_COUNTERS = 10;
 
   switch (run_mode) {
-    case 0: {
+    case 10: { // Counte test, single int counter
       int* d_scratch, h_scratch;
       CE(cudaMalloc(&d_scratch, sizeof(int)));
       CE(cudaMemset(d_scratch, 0x00, sizeof(int)));
@@ -123,7 +128,7 @@ int main(int argc, char **argv) {
       printf("(int) Counter=%d\n", h_scratch);
       break;
     }
-    case 10: {
+    case 11: { // Counter test, single long counter
       int64_t* d_scratch, h_scratch;
       CE(cudaMalloc(&d_scratch, sizeof(int64_t)));
       CE(cudaMemset(d_scratch, 0x00, sizeof(int64_t)));
@@ -132,7 +137,7 @@ int main(int argc, char **argv) {
       printf("(long) Counter=%ld\n", h_scratch);
       break;
     }
-    case 2: {
+    case 12: { // Counter test, multiple int counters
       int* d_scratch, h_scratch[NUM_COUNTERS];
       CE(cudaMalloc(&d_scratch, sizeof(int)*NUM_COUNTERS));
       CE(cudaMemset(d_scratch, 0x00, sizeof(int)*NUM_COUNTERS));
@@ -145,7 +150,7 @@ int main(int argc, char **argv) {
       printf("\n");
       break;
     }
-    case 20: {
+    case 13: { // Counter test, multiple long counters
       int64_t* d_scratch, h_scratch[NUM_COUNTERS];
       CE(cudaMalloc(&d_scratch, sizeof(int64_t)*NUM_COUNTERS));
       CE(cudaMemset(d_scratch, 0x00, sizeof(int64_t)*NUM_COUNTERS));
@@ -157,6 +162,40 @@ int main(int argc, char **argv) {
       }
       printf("\n");
       break;
+    }
+    case 20: {
+      ListNode* h_listnode = new ListNode[LIST_SIZE+2];
+      ListNode* d_listnode = nullptr;
+      int* vals = new int[LIST_SIZE];
+      for (int i=0; i<LIST_SIZE; i++) { vals[i] = i; }
+      for (int i=0; i<LIST_SIZE; i++) {
+        int j = rand() % (LIST_SIZE - i);
+        const int tmp = vals[i];
+        vals[i] = vals[j];
+        vals[j] = tmp;
+      }
+      // Sentinel elements of the linked list
+      h_listnode[0].val           = -2147483648;
+      h_listnode[0].next_idx      = LIST_SIZE + 1;
+      h_listnode[LIST_SIZE+1].val      = 2147483647;
+      h_listnode[LIST_SIZE+1].next_idx = -999;
+      for (int i=0; i<LIST_SIZE; i++) {
+        h_listnode[i+1].val = vals[i];
+      }
+      const size_t S = sizeof(ListNode)*(2+LIST_SIZE);
+      CE(cudaMalloc(&d_listnode, S));
+      CE(cudaMemcpy(d_listnode, h_listnode, S, cudaMemcpyHostToDevice));
+      
+      listbmk_GPU_serial<<<1, 1>>>(d_listnode, d_listnode+1, LIST_SIZE);
+
+      CE(cudaMemcpy(h_listnode, d_listnode, S, cudaMemcpyDeviceToHost));
+      int idx = 0;
+      while (idx != -999) {
+        ListNode* n = &(h_listnode[idx]);
+        printf("%d ", n->val);
+        idx = n->next_idx;
+      }
+      printf("\n");
     }
   }
 

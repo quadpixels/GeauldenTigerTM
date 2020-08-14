@@ -106,6 +106,7 @@
     <CudaCompile Include="geauldenTigerTM.cu">
       <FileType>Document</FileType>
     </CudaCompile>
+    <CudaCompile Include="linkedlist.cu" />
     <CudaCompile Include="pstm.cu">
       <FileType>Document</FileType>
     </CudaCompile>
@@ -115,6 +116,9 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="pstm.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="linkedlist.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
