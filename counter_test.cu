@@ -26,6 +26,7 @@ extern __device__ bool TxRead(const int tid, bool* aborted,	const int* const add
 extern __device__ bool TxWrite(const int tid, bool* aborted,	int* const addr, const int value, class RWLogs* rwlog);
 extern __device__ bool TxCommit(const int tid, bool* aborted, class RWLogs* rwlog);
 extern __device__ int GetThdID();
+extern __device__ int* g_pingpong_mailbox;
 
 __global__ void Hello() {
   printf("Hello from CUDA\n");

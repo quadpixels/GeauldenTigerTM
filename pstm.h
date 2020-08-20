@@ -1,3 +1,6 @@
+// PSTM is largely built on the descriptions in the paper "PR-STM: Priority Rule Based Software Transactions for the GPU"
+// by Qi Shen, Craig Sharp, William Blewitt, Gary Ushaw, Euro-Par 2015
+
 #ifndef __PSTM_H
 #define __PSTM_H
 

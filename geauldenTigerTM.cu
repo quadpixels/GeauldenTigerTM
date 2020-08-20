@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <assert.h>
+#include <thread>
 
 #include "device_launch_parameters.h"
 #include "linkedlist.h"
@@ -48,8 +49,10 @@ extern __global__ void counterTest(class RWLogs*, int*);
 extern __global__ void counterTestLong(class RWLogs* rwlogs, int64_t* scratch);
 extern __global__ void counterTestMultiple(class RWLogs* rwlogs, int* scratch, const int N);
 extern __global__ void counterTestMultipleLong(class RWLogs* rwlogs, int64_t* scratch, const int N);
-
+extern __global__ void pingpong();
+extern __global__ void pingpong_signal(int x);
 extern __global__ void listbmk_GPU_serial(ListNode* list_head, ListNode* new_nodes, int count);
+extern __device__ int* g_pingpong_mailbox;
 
 __device__ int GetThdID() {
   return threadIdx.x + blockIdx.x * blockDim.x;
@@ -73,6 +76,10 @@ int main(int argc, char **argv) {
     } else if (2 == sscanf(argv[i], "dim=%d,%d", &NB, &NT)) {
       printf("Dimension set to <<<%d, %d>>>\n", NB, NT);
     }
+  }
+
+  if (run_mode == 1) {
+    CE(cudaSetDeviceFlags(cudaDeviceMapHost));
   }
 
   // Metadata for Orec-based STM algorithms
@@ -119,6 +126,81 @@ int main(int argc, char **argv) {
   const int NUM_COUNTERS = 10;
 
   switch (run_mode) {
+  case 1: case 2: { // Ping-pong test for host <-> device communication
+      if (run_mode == 1)
+        printf("Host<->Device ping pong test, mailbox allocated with cudaHostAlloc, using cudaMemcpyAsync to update mailbox\n");
+      if (run_mode == 2)
+        printf("Host<->Device ping pong test, mailbox allocated with cudaHostAlloc, using assignments to update mailbox\n");
+      int* mb_d;
+
+      // The first NB*NT elements are the "mailbox" used to "wake up" the GPU threads from the while loop
+      // The 1 element past the NB*NT'th is the timestamp that's constantly getting incremented by the 
+      CE(cudaHostAlloc(&mb_d, sizeof(int)*NB*NT*2, cudaHostAllocMapped));
+
+      CE(cudaMemset(mb_d, 0x00, sizeof(int)*NB*NT*2));
+      CE(cudaMemcpyToSymbol(g_pingpong_mailbox, &mb_d, sizeof(void*), 0, cudaMemcpyHostToDevice));
+      
+      cudaStream_t stream0;
+      CE(cudaStreamCreate(&stream0));
+      pingpong<<<NB, NT, 1, stream0>>>();
+
+      int timestamp = 1;
+      int* ps = &timestamp;
+      bool done = false;
+      bool* pdone = &done;
+
+      std::thread incrementer([pdone, ps, NB, NT, mb_d]() {
+        while (!(*pdone)) {
+          _sleep(1);
+          mb_d[NB*NT] = *ps;
+          (*ps)++;
+        }
+      });
+
+      std::thread updater([NB, NT, mb_d, ps, run_mode](){
+        cudaStream_t stream1;
+        CE(cudaStreamCreate(&stream1));
+        for (int i=0; i<NB*NT; i++) {
+          _sleep(20);
+
+          if (run_mode == 1) {
+            const int one = 1;
+            CE(cudaMemcpyAsync(mb_d+i, &one, sizeof(int), cudaMemcpyHostToDevice, stream1));
+          } else if (run_mode == 2) {
+            // Note: if there is only the assignment and no memcpyAsync, the memory region will not get updated on time, and all
+            //       changes to it will only become visible at the end. So instead of some increasing sequence like
+            // 3 5 6 9 10 13 14 ...
+            // you may get
+            // 257 257 257 257 257 ...
+            mb_d[i] = 1;
+
+            // Make mb_d[i] visible to the running kernel
+            const int dummy = 0xCAFE;
+            CE(cudaMemcpyAsync(mb_d+NB*NT+1, &dummy, sizeof(int), cudaMemcpyHostToDevice, stream1));
+          }
+
+          printf("[Updater] waking up thread %d at timestamp %d\n", i, *ps);
+        }
+        //CE(cudaStreamSynchronize(stream1));
+      });
+      updater.join();
+
+      _sleep(1000);
+
+      done = true;
+      incrementer.join();
+
+      //CE(cudaDeviceSynchronize());
+      int* mb_h = new int[NB*NT];
+      CE(cudaMemcpy(mb_h, mb_d, sizeof(int)*NB*NT, cudaMemcpyDeviceToHost));
+      printf("Done! The timestamps at which each CUDA thread got awakened are:\n");
+      for (int i=0; i<NB*NT; i++) {
+        printf("%d ", mb_h[i]);
+      }
+      printf("\n");
+
+      break;
+    }
     case 10: { // Counte test, single int counter
       int* d_scratch, h_scratch;
       CE(cudaMalloc(&d_scratch, sizeof(int)));
